@@ -22,7 +22,7 @@ fn main() -> std::io::Result<()> {
             match receive_packet(&mut reader_stream) {
                 Ok((_header, payload)) => {
                     let msg = String::from_utf8_lossy(&payload);
-                    print!("\r\x1b[2K[Incoming]: {}\n> ", msg);  // Clear prompt to print msg (ANSI jank)
+                    print!("\r\x1b[2K{}\n> ", msg);  // Clear prompt to print msg (ANSI jank)
                     io::stdout().flush().unwrap();
                 }
                 Err(_) => {

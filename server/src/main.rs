@@ -43,8 +43,11 @@ fn main() -> std::io::Result<()> {
             loop {
                 match receive_packet(&mut stream) {
                     Ok((_header, payload)) => {
-                        let msg = String::from_utf8_lossy(&payload);
-                        println!("[{}] Says: {}", addr, msg);
+                        let msg_content = String::from_utf8_lossy(&payload);
+                        println!("[{}] Says: {}", addr, msg_content);
+
+                        let msg = format!("[{}]: {}", addr, msg_content);
+                        let broadcast_payload = msg.as_bytes();
 
                         let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");
 
@@ -56,7 +59,7 @@ fn main() -> std::io::Result<()> {
                                 if ta == addr { return true; }
                             }
 
-                            match send_packet(client, PacketType::Message, &payload) {
+                            match send_packet(client, PacketType::Message, broadcast_payload) {
                                 Ok(_) => {
                                     if let Some(ta) = target_addr { println!("  => Broadcast to {}", ta); }
                                     true
