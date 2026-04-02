@@ -38,56 +38,61 @@ fn main() -> std::io::Result<()> {
         }
 
         // Thread for each client
-        thread::spawn(move || {
-            let mut stream = stream;
-            loop {
-                match receive_packet(&mut stream) {
-                    Ok((_header, payload)) => {
-                        let msg_content = String::from_utf8_lossy(&payload);
-                        println!("[{}] Says: {}", addr, msg_content);
-
-                        let msg = format!("[{}]: {}", addr, msg_content);
-                        let broadcast_payload = msg.as_bytes();
-
-                        let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");
-
-                        clients_lock.retain_mut(|client| {
-                            let target_addr = client.peer_addr().ok();
-
-                            // Don't broadcast to sender
-                            if let Some(ta) = target_addr {
-                                if ta == addr { return true; }
-                            }
-
-                            match send_packet(client, PacketType::Message, broadcast_payload) {
-                                Ok(_) => {
-                                    if let Some(ta) = target_addr { println!("  => Broadcast to {}", ta); }
-                                    true
-                                }
-                                Err(_) => {
-                                    if let Some(ta) = target_addr { println!("  !> Connection lost with {}. Removing.", ta); }
-                                    false
-                                }
-                            }
-                        });
-                    }
-                    Err(_) => {
-                        println!("[{}] Disconnected. Removing.", addr);
-
-                        // Immediately remove disconnected client
-                        if let Ok(mut clients_lock) = clients_clone.lock() {
-                            clients_lock.retain(|client| {
-                                match client.peer_addr() {
-                                    Ok(c_addr) => c_addr != addr,  // Remove disconnected client
-                                    Err(_) => false,  // If unable to get addr, dead anyways
-                                }
-                            });
-                        }
-                        break;
-                    }
-                }
-            }
-        });
+        thread::spawn(move || { handle_client(stream, addr, clients_clone); });  // Closure here calls function rather than function returning closure for simplicity
     }
     Ok(())
+}
+
+fn handle_client(
+    mut stream: TcpStream,
+    addr: std::net::SocketAddr,
+    clients_clone: Arc<Mutex<Vec<TcpStream>>>
+) {
+    loop {
+        match receive_packet(&mut stream) {
+            Ok((_header, payload)) => {
+                let msg_content = String::from_utf8_lossy(&payload);
+                println!("[{}] Says: {}", addr, msg_content);
+
+                let msg = format!("[{}]: {}", addr, msg_content);
+                let broadcast_payload = msg.as_bytes();
+
+                let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");
+
+                clients_lock.retain_mut(|client| {
+                    let target_addr = client.peer_addr().ok();
+
+                    // Don't broadcast to sender
+                    if let Some(ta) = target_addr {
+                        if ta == addr { return true; }
+                    }
+
+                    match send_packet(client, PacketType::Message, broadcast_payload) {
+                        Ok(_) => {
+                            if let Some(ta) = target_addr { println!("  => Broadcast to {}", ta); }
+                            true
+                        }
+                        Err(_) => {
+                            if let Some(ta) = target_addr { println!("  !> Connection lost with {}. Removing.", ta); }
+                            false
+                        }
+                    }
+                });
+            }
+            Err(_) => {
+                println!("[{}] Disconnected. Removing.", addr);
+
+                // Immediately remove disconnected client
+                if let Ok(mut clients_lock) = clients_clone.lock() {
+                    clients_lock.retain(|client| {
+                        match client.peer_addr() {
+                            Ok(c_addr) => c_addr != addr,  // Remove disconnected client
+                            Err(_) => false,  // If unable to get addr, dead anyways
+                        }
+                    });
+                }
+                break;
+            }
+        }
+    }
 }
