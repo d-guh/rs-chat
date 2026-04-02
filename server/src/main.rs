@@ -33,7 +33,7 @@ fn main() -> std::io::Result<()> {
         let clients_clone = Arc::clone(&clients);
 
         {
-            let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");
+            let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");  // Term if fail to lock
             clients_lock.push(stream.try_clone()?);  // Term if fd/socket limit
         }
 
@@ -57,7 +57,7 @@ fn handle_client(
                 let msg = format!("[{}]: {}", addr, msg_content);
                 let broadcast_payload = msg.as_bytes();
 
-                let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");
+                let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");  // Term if fail to lock
 
                 clients_lock.retain_mut(|client| {
                     let target_addr = client.peer_addr().ok();
