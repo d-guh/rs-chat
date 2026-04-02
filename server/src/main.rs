@@ -14,8 +14,20 @@ fn main() -> std::io::Result<()> {
 
     // Incoming connections loop
     for stream in listener.incoming() {
-        let stream = stream?;  // Term if OS error, strips result
-        let addr = stream.peer_addr()?;  // Term if OS drops conn before we can read peer
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Failed to accept connection: {}", e);
+                continue;  // Skip if OS-level conn error
+            }
+        };
+        let addr = match stream.peer_addr() {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("Client disconnected before handshake: {}", e);
+                continue;  // Skip if immediate RST or error
+            }
+        };
         println!("[{}] Incoming Connection", addr);
     
         let clients_clone = Arc::clone(&clients);
@@ -57,7 +69,17 @@ fn main() -> std::io::Result<()> {
                         });
                     }
                     Err(_) => {
-                        println!("[{}] Disconnected", addr);
+                        println!("[{}] Disconnected. Removing.", addr);
+
+                        // Immediately remove disconnected client
+                        if let Ok(mut clients_lock) = clients_clone.lock() {
+                            clients_lock.retain(|client| {
+                                match client.peer_addr() {
+                                    Ok(c_addr) => c_addr != addr,  // Remove disconnected client
+                                    Err(_) => false,  // If unable to get addr, dead anyways
+                                }
+                            });
+                        }
                         break;
                     }
                 }

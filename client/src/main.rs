@@ -13,13 +13,16 @@ fn main() -> std::io::Result<()> {
 
     let mut reader_stream = stream.try_clone()?;  // Term if fd limit
 
+    // TODO: Add TUI for avoiding clearing user input when messages come in.
+    // Debated adding Arc+Mutex for input, but mostly useless unless you enable crossterm raw mode anyways
+
     // Listener thread
     thread::spawn(move || {
         loop {
             match receive_packet(&mut reader_stream) {
                 Ok((_header, payload)) => {
                     let msg = String::from_utf8_lossy(&payload);
-                    print!("\r[Incoming]: {}\n> ", msg);  // Clear prompt to print msg
+                    print!("\r\x1b[2K[Incoming]: {}\n> ", msg);  // Clear prompt to print msg (ANSI jank)
                     io::stdout().flush().unwrap();
                 }
                 Err(_) => {
@@ -30,7 +33,7 @@ fn main() -> std::io::Result<()> {
         }
     });
 
-    // Sender thread
+    // Sender loop (main thread)
     let mut input = String::new();
     loop {
         print!("> ");
