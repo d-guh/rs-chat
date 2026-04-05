@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::net::TcpStream;
 use std::thread;
 use std::time::Duration;
-use common::{receive_packet, send_packet, PacketType};
+use common::{receive_packet, send_packet, PacketType, MAX_USERNAME_LEN};
 
 fn main() -> io::Result<()> {
     const ADDR: &str = "127.0.0.1";
@@ -25,17 +25,24 @@ fn main() -> io::Result<()> {
 }
 
 fn perform_login(stream: &mut TcpStream) -> io::Result<()> {
-    print!("Enter username: ");
-    io::stdout().flush()?;
+    loop {
+        print!("Enter username: ");
+        io::stdout().flush()?;
 
-    let mut username = String::new();
-    io::stdin().read_line(&mut username)?;
-    let username = username.trim();
+        let mut username = String::new();
+        io::stdin().read_line(&mut username)?;
+        let username = username.trim();
 
-    if username.is_empty() {
-        send_packet(stream, PacketType::Login, b"Anonymous")
-    } else {
-        send_packet(stream, PacketType::Login, username.as_bytes())
+        if username.is_empty() {
+            return send_packet(stream, PacketType::Login, b"Anonymous");
+        }
+
+        if username.len() > MAX_USERNAME_LEN {
+            println!("Error: Username too long!");
+            continue;
+        }
+
+        return send_packet(stream, PacketType::Login, username.as_bytes());
     }
 }
 

@@ -85,6 +85,7 @@ pub fn send_packet(stream: &mut TcpStream, p_type: PacketType, payload: &[u8]) -
         length: payload.len() as u32,
     };
 
+    // io error if conn closed or buffer full
     stream.write_all(&header.to_bytes())?;
     stream.write_all(payload)?;
     stream.flush()
@@ -92,12 +93,12 @@ pub fn send_packet(stream: &mut TcpStream, p_type: PacketType, payload: &[u8]) -
 
 pub fn receive_packet(stream: &mut TcpStream) -> io::Result<(Header, Vec<u8>)> {
     let mut header_bytes = [0u8; Header::SIZE];
-    stream.read_exact(&mut header_bytes)?;
+    stream.read_exact(&mut header_bytes)?;  // error if stream ends before reading 5 bytes
 
-    let header = Header::from_bytes(header_bytes)?;
+    let header = Header::from_bytes(header_bytes)?;  // error if invalid type/size
 
     let mut payload = vec![0u8; header.length as usize];
-    stream.read_exact(&mut payload)?;
+    stream.read_exact(&mut payload)?;  // error if payload too short or conn drops
 
     Ok((header, payload))
 }

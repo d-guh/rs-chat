@@ -1,7 +1,7 @@
 use std::net::{TcpListener, TcpStream, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use common::{receive_packet, send_packet, PacketType, Client};
+use common::{receive_packet, send_packet, PacketType, Client, MAX_USERNAME_LEN};
 
 fn main() -> std::io::Result<()> {
     const ADDR: &str = "127.0.0.1";
@@ -66,7 +66,12 @@ fn handle_client(mut stream: TcpStream, addr: SocketAddr, clients_clone: Arc<Mut
                         broadcast_message(&mut clients_lock, addr, &broadcast_msg);
                     }
                     PacketType::Login => {
-                        let new_name = String::from_utf8_lossy(&payload).trim().to_string();
+                        let mut new_name = String::from_utf8_lossy(&payload).trim().to_string();
+
+                        if new_name.len() > MAX_USERNAME_LEN {
+                            new_name.truncate(MAX_USERNAME_LEN);
+                        }
+
                         if let Some(c) = clients_lock.iter_mut().find(|c| c.addr == addr) {
                             c.username = new_name.clone();
                             log_info(addr, &new_name, "Identified.");
