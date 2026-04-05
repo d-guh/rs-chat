@@ -1,18 +1,26 @@
 use std::io::{self, Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, SocketAddr};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PacketType {
-    Message = 1,
-    Command = 2,
+    Message = 0x01,
+    Login = 0x02,
+    Quit = 0x03,
+    Heartbeat = 0x04,
+    Command = 0x05,
+    System = 0x06,
 }
 
 impl PacketType {
     pub fn from_u8(byte: u8) -> Option<Self> {
         match byte {
-            1 => Some(PacketType::Message),
-            2 => Some(PacketType::Command),
+            0x01 => Some(PacketType::Message),
+            0x02 => Some(PacketType::Login),
+            0x03 => Some(PacketType::Quit),
+            0x04 => Some(PacketType::Heartbeat),
+            0x05 => Some(PacketType::Command),
+            0x06 => Some(PacketType::System),
             _ => None,
         }
     }
@@ -41,6 +49,23 @@ impl Header {
         let length = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]);
 
         Ok(Header { packet_type, length })
+    }
+}
+
+pub struct Client {
+    pub stream: TcpStream,
+    pub addr: SocketAddr,
+    pub username: String,
+}
+
+impl Client {
+    pub fn new(stream: TcpStream, addr: SocketAddr) -> Self {
+        Self {
+            stream,
+            addr,
+            // Default username is IP until Login packet recv
+            username: addr.to_string(),
+        }
     }
 }
 
