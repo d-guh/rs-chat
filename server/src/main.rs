@@ -77,7 +77,9 @@ fn handle_client(mut stream: TcpStream, addr: SocketAddr, clients_clone: Arc<Mut
                     }
                     PacketType::Quit => break,
                     PacketType::Heartbeat => {
-                        // TODO: Implement Heartbeat
+                        // Server responds to clients checking in
+                        // Could be improved
+                        let _ = send_packet(&mut stream, PacketType::Heartbeat, &[]);
                     }
                     PacketType::Command => {
                         log_info(addr, &username, "Command received.");
@@ -140,4 +142,15 @@ fn broadcast_system_message(clients: &mut Vec<Client>, message: &str) {
             Err(_) => false,
         }
     });
+}
+
+// Forcefully kill client connection, not with Quit packet, but at TCP level
+fn _kill_client(addr: SocketAddr, clients_clone: Arc<Mutex<Vec<Client>>>) {
+    let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");
+    if let Some(pos) = clients_lock.iter().position(|c| c.addr == addr) {
+        let client = clients_lock.remove(pos);
+
+        let _ = client.stream.shutdown(std::net::Shutdown::Both);
+        println!("[ADMIN] Forcefully killed connection: {}", addr);
+    }
 }

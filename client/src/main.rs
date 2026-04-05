@@ -1,6 +1,7 @@
 use std::io::{self, Write};
 use std::net::TcpStream;
 use std::thread;
+use std::time::Duration;
 use common::{receive_packet, send_packet, PacketType};
 
 fn main() -> io::Result<()> {
@@ -14,6 +15,9 @@ fn main() -> io::Result<()> {
 
     let rx_stream = stream.try_clone()?;
     thread::spawn(move || { handle_receiver(rx_stream); });
+
+    let hb_stream = stream.try_clone()?;
+    thread::spawn(move || { handle_heartbeat(hb_stream); });
 
     handle_sender(stream)?;
 
@@ -53,7 +57,7 @@ fn handle_receiver(mut stream: TcpStream) {
                         break;
                     }
                     PacketType::Heartbeat => {
-                        // TODO: Implement Heartbeat
+                        // TODO: Improve heartbeat? Last seen timer etc
                     }
                     _ => {} // Ignore other types
                 }
@@ -89,4 +93,16 @@ fn handle_sender(mut stream: TcpStream) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+// Currently behaves as a simple packet spam to keep conn/gateway open
+// Could be improved to use atomics to store last check-in time etc, and kill if multiple fail
+fn handle_heartbeat(mut stream: TcpStream) {
+    loop {
+        thread::sleep(Duration::from_secs(30));
+        if let Err(e) = send_packet(&mut stream, PacketType::Heartbeat, &[]) {
+            eprintln!("\nHeartbeat failed: {}. Closing connection...", e);
+            std::process::exit(1); 
+        }
+    }
 }
