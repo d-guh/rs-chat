@@ -1,6 +1,9 @@
 use std::io::{self, Read, Write};
 use std::net::{TcpStream, SocketAddr};
 
+pub const MAX_PAYLOAD_SIZE: u32 = 1024 * 1024;  // 1MiB limit
+pub const MAX_USERNAME_LEN: usize = 32;
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PacketType {
@@ -47,6 +50,13 @@ impl Header {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid Packet Type"))?;
 
         let length = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]);
+
+        if length > MAX_PAYLOAD_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData, 
+                format!("Payload size {} exceeds limit of {}", length, MAX_PAYLOAD_SIZE)
+            ));
+        }
 
         Ok(Header { packet_type, length })
     }

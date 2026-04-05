@@ -34,7 +34,7 @@ fn main() -> std::io::Result<()> {
         let clients_clone = Arc::clone(&clients);
 
         {
-            let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");  // Term if fail to lock
+            let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");
             let new_client = Client::new(stream.try_clone()?, addr);  // Term if fd/socket limit
             clients_lock.push(new_client);
         }
@@ -45,62 +45,99 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn handle_client(
-    mut stream: TcpStream,
-    addr: SocketAddr,
-    clients_clone: Arc<Mutex<Vec<Client>>>
-) {
+fn handle_client(mut stream: TcpStream, addr: SocketAddr, clients_clone: Arc<Mutex<Vec<Client>>>) {
     loop {
         match receive_packet(&mut stream) {
             Ok((header, payload)) => {
-                let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");  // Term if fail to lock
+                if header.packet_type == PacketType::System {
+                    eprintln!("WARNING: Client [{}] attempted to spoof System packet. Dropping.", addr);
+                    continue;
+                }
+
+                let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");
+                let username = get_username(&clients_lock, addr);
 
                 match header.packet_type {
                     PacketType::Message => {
                         let msg_content = String::from_utf8_lossy(&payload);
+                        log_info(addr, &username, &format!("Says: {}", msg_content));
 
-                        let sender_name = clients_lock.iter()
-                            .find(|c| c.addr == addr)
-                            .map(|c| c.username.clone())
-                            .unwrap_or_else(|| addr.to_string());  // If username fails, fallback to IP
-
-                        println!("[{}] Says: {}", sender_name, msg_content);
-
-                        let broadcast_msg = format!("[{}]: {}", sender_name, msg_content);
-                        let broadcast_payload = broadcast_msg.as_bytes();
-
-                        clients_lock.retain_mut(|client| {
-                            if client.addr == addr { return true; }
-
-                            match send_packet(&mut client.stream, PacketType::Message, broadcast_payload) {
-                                Ok(_) => {
-                                    println!("  => Broadcast to {}", client.addr);
-                                    true
-                                }
-                                Err(_) => {
-                                    println!("  !> Connection lost with {}. Removing.", client.addr);
-                                    false
-                                }
-                            }
-                        });
+                        let broadcast_msg = format!("[{}]: {}", username, msg_content);
+                        broadcast_message(&mut clients_lock, addr, &broadcast_msg);
                     }
                     PacketType::Login => {
-                        let username = String::from_utf8_lossy(&payload).trim().to_string();
+                        let new_name = String::from_utf8_lossy(&payload).trim().to_string();
                         if let Some(c) = clients_lock.iter_mut().find(|c| c.addr == addr) {
-                            c.username = username.clone();
-                            println!("[{}] Identified as: {}", addr, username);
+                            c.username = new_name.clone();
+                            log_info(addr, &new_name, "Identified.");
+                            
+                            let welcome_msg = format!("{} has joined the chat.", new_name);
+                            broadcast_system_message(&mut clients_lock, &welcome_msg);
                         }
                     }
-                    _ => {}  // TODO: Heartbeat, command, etc.
+                    PacketType::Quit => break,
+                    PacketType::Heartbeat => {
+                        // TODO: Implement Heartbeat
+                    }
+                    PacketType::Command => {
+                        log_info(addr, &username, "Command received.");
+                    }
+                    _ => {}  // Do nothing for other PacketType
                 }
             }
-            Err(_) => {
-                println!("[{}] Disconnected.", addr);
-                if let Ok(mut clients_lock) = clients_clone.lock() {
-                    clients_lock.retain(|c| c.addr != addr);
-                }
-                break;
-            }
+            Err(_) => break,
         }
     }
+
+    // Cleanup (when loop breaks this executes)
+    remove_client(addr, clients_clone);
+}
+
+
+fn remove_client(addr: SocketAddr, clients_clone: Arc<Mutex<Vec<Client>>>) {
+    let mut clients_lock = clients_clone.lock().expect("Failed to lock mutex");
+    
+    let username = get_username(&clients_lock, addr);
+    clients_lock.retain(|c| c.addr != addr);
+
+    log_info(addr, &username, "Disconnected.");
+    
+    let leave_msg = format!("{} has left the chat.", username);
+    broadcast_system_message(&mut clients_lock, &leave_msg);
+}
+
+fn log_info(addr: SocketAddr, username: &str, message: &str) {
+    println!("[{} ({})] {}", addr, username, message);
+}
+
+fn get_username(clients: &[Client], addr: SocketAddr) -> String {
+    clients.iter()
+        .find(|c| c.addr == addr)
+        .map(|c| c.username.clone())
+        .unwrap_or_else(|| addr.to_string())  // If username fails, fallback to IP
+}
+
+fn broadcast_message(clients: &mut Vec<Client>, sender_addr: SocketAddr, message: &str) {
+    let payload = message.as_bytes();
+    clients.retain_mut(|client| {
+        if client.addr == sender_addr { return true; }
+
+        match send_packet(&mut client.stream, PacketType::Message, payload) {
+            Ok(_) => true,
+            Err(_) => {
+                println!("!> Failed to broadcast to {}. Removing.", client.addr);
+                false
+            }
+        }
+    });
+}
+
+fn broadcast_system_message(clients: &mut Vec<Client>, message: &str) {
+    let payload = message.as_bytes();
+    clients.retain_mut(|client| {
+        match send_packet(&mut client.stream, PacketType::System, payload) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    });
 }
